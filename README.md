@@ -1,7 +1,4 @@
-# AIOps-test
-
-한화시스템/ICT 신입사원 채용 사전과제 **"AIOps 기반 지능형 인프라 운영 설계"**
-관련 산출물 저장소.
+# AIOps 기반 지능형 인프라 운영 설계
 
 ## 구성
 
@@ -15,11 +12,6 @@ AIOps-test/
     └── docs/slack-setup.md
     (Phase 진행에 따라 01-k8s, 02-observability, ... 추가 예정)
 ```
-
-## 어느 걸 먼저 봐야 하나
-
-- **발표 데모만 보고 싶다**: `mockup/` 의 `python3 aiops_poc.py` 한 줄로 전체 흐름 재현 (외부 호출 전부 mock).
-- **실제 클러스터에서 검증**: `aiops-lab/` 하위 Phase 0 부터 순차 실행. 현재 Phase 0(preflight) 완료.
 
 ## Phase 진행 상황
 
