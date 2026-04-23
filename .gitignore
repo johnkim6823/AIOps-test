@@ -1,2 +1,34 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Secrets / local config
+.env
+.env.*
+!.env.example
+*.kubeconfig
+kubeconfig
+kubeconfig.*
+*.pem
+*.key
+
+# Helm / kind artifacts
+charts/*.tgz
+.helm/
+kind-*.yaml.bak
+
+# n8n local data
+03-workflow/n8n_data/
+03-workflow/qdrant_data/
+03-workflow/ollama_data/
+03-workflow/redis_data/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
