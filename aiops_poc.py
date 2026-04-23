@@ -8,8 +8,44 @@ AIOps PoC - payment-api OOMKilled 자동 진단/조치 시뮬레이션
 """
 
 import json
+import sys
 import time
 import re
+
+
+# ────────────────────────────────────────────────────────────────────
+# Windows 콘솔 호환 shim
+#   1) cmd.exe/PowerShell 5에서 ANSI 이스케이프가 raw로 보이지 않도록
+#      VT(Virtual Terminal) 모드를 활성화한다.
+#   2) 기본 코드페이지가 cp949(한국어 Windows)여도 이모지/박스문자가
+#      UnicodeEncodeError 없이 출력되도록 stdout을 UTF-8로 재구성한다.
+# Linux/Mac에서는 아무 효과가 없다.
+# ────────────────────────────────────────────────────────────────────
+def _enable_windows_ansi() -> None:
+    if sys.platform != "win32":
+        return
+    # stdout/stderr UTF-8 강제 (Python 3.7+)
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8")
+            except Exception:
+                pass
+    # ANSI VT 모드 on: ENABLE_PROCESSED_OUTPUT(0x1) | ENABLE_VIRTUAL_TERMINAL_PROCESSING(0x4)
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        for handle_id in (-11, -12):  # STD_OUTPUT_HANDLE, STD_ERROR_HANDLE
+            h = kernel32.GetStdHandle(handle_id)
+            mode = ctypes.c_ulong()
+            if kernel32.GetConsoleMode(h, ctypes.byref(mode)):
+                kernel32.SetConsoleMode(h, mode.value | 0x0001 | 0x0004)
+    except Exception:
+        pass  # 콘솔이 없는 환경(리다이렉트 등)은 무시
+
+
+_enable_windows_ansi()
 
 
 # ────────────────────────────────────────────────────────────────────

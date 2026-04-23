@@ -9,13 +9,31 @@
 
 ## 실행 방법
 
+**Linux / macOS**
 ```bash
 python3 aiops_poc.py
+```
+
+**Windows** (PowerShell / cmd / Windows Terminal 모두 가능)
+```powershell
+python aiops_poc.py
 ```
 
 - Python 3.8+ 표준 라이브러리만 사용 (`pip install` 불필요)
 - 외부 네트워크 호출 없음 (Prometheus/LLM/Slack/K8s 전부 mock)
 - STEP 5에서 `y` 입력 시 조치 적용, `n` 입력 시 취소
+
+### Windows 콘솔 호환성
+
+스크립트 시작 시 `_enable_windows_ansi()` 가 실행되어 다음을 자동 처리한다.
+
+- `ctypes`로 `ENABLE_VIRTUAL_TERMINAL_PROCESSING` 모드를 켜서 구형 `cmd.exe`에서도 ANSI 컬러가 정상 렌더링됨
+- `sys.stdout.reconfigure(encoding="utf-8")` 로 기본 코드페이지가 `cp949` 여도 이모지/박스 문자를 `UnicodeEncodeError` 없이 출력
+
+만약 출력이 여전히 깨지면 (매우 오래된 Windows 7 등) 아래 중 하나를 권장한다.
+
+- Windows Terminal 또는 PowerShell 7 사용
+- 실행 전 `chcp 65001` 로 코드페이지를 UTF-8로 수동 변경
 
 ---
 
