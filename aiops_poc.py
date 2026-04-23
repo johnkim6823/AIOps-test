@@ -66,7 +66,7 @@ class C:
 def header(step_no: str, title: str) -> None:
     """STEP 헤더를 시안색 볼드로 출력."""
     print(f"\n{C.CYAN}{C.BOLD}[STEP {step_no}] {title}{C.RESET}")
-    print(f"{C.CYAN}{'─' * 60}{C.RESET}")
+    print(f"{C.CYAN}{'-' * 60}{C.RESET}")
 
 
 def pause(sec: float = 1.0) -> None:
@@ -83,7 +83,7 @@ def step1_detect() -> dict:
     실제 구현 시 여기에 n8n Webhook 엔드포인트가 Alertmanager POST payload를 수신한다.
     (즉, 이 dict는 `requests.post(n8n_webhook_url, json=payload)`로 들어오는 body에 해당)
     """
-    header("1", "🔔 알람 탐지  (Prometheus → Alertmanager → n8n Webhook)")
+    header("1", "ALERT DETECTION  (Prometheus -> Alertmanager -> n8n Webhook)")
 
     # 실제 Alertmanager가 보내는 payload 구조를 간략화하여 mock 생성
     alert_payload = {
@@ -98,7 +98,7 @@ def step1_detect() -> dict:
         "timestamp": "2026-04-23T10:15:42Z",
     }
 
-    print(f"{C.BLUE}🔔 [Alertmanager] 알람 수신: "
+    print(f"{C.BLUE}[Alertmanager] Alert received: "
           f"{C.YELLOW}payment-api OOMKilled{C.RESET}")
     print(f"   Pod       : {alert_payload['pod']}")
     print(f"   Namespace : {alert_payload['namespace']}")
@@ -106,7 +106,7 @@ def step1_detect() -> dict:
           f"(exit {alert_payload['exit_code']}){C.RESET}")
     print(f"   Memory    : {alert_payload['memory_usage_peak']} / "
           f"{alert_payload['memory_limit']}  "
-          f"{C.RED}(limit 99.8% 도달){C.RESET}")
+          f"{C.RED}(limit 99.8% reached){C.RESET}")
 
     pause(1.2)
     return alert_payload
@@ -121,7 +121,7 @@ def step2_collect_context(alert: dict) -> dict:
     실제 구현 시 여기에 `subprocess.run(['kubectl', 'describe', 'pod', pod, '-n', ns])`
     또는 K8s Python client(`kubernetes.client.CoreV1Api()`) 호출이 들어간다.
     """
-    header("2", "📋 컨텍스트 수집  (kubectl describe / logs / get events)")
+    header("2", "CONTEXT COLLECTION  (kubectl describe / logs / get events)")
 
     # 실제 kubectl describe pod 출력 형식에 맞춰 하드코딩된 mock 데이터
     describe_output = (
@@ -166,9 +166,10 @@ def step2_collect_context(alert: dict) -> dict:
     print(f"{C.DIM}  $ kubectl logs {alert['pod']} -n {alert['namespace']} --tail=50{C.RESET}")
     print(f"{C.DIM}  $ kubectl get events -n {alert['namespace']} --field-selector involvedObject.name={alert['pod']}{C.RESET}")
     print()
-    print(f"  핵심 로그: {C.RED}{context['critical_log']}{C.RESET}")
-    print(f"  재시작   : {C.YELLOW}5회 / 최근 8분{C.RESET}")
-    print(f"\n{C.GREEN}📋 [n8n] 컨텍스트 수집 완료 (describe/logs/events){C.RESET}")
+    print(f"  Critical log : {C.RED}{context['critical_log']}{C.RESET}")
+    print(f"  Restarts     : {C.YELLOW}5 times in last 8 minutes{C.RESET}")
+    print(f"\n{C.GREEN}[n8n] Context collection complete "
+          f"(describe/logs/events){C.RESET}")
 
     pause(1.0)
     return context
@@ -185,31 +186,31 @@ def step3a_llm_diagnose(alert: dict, context: dict) -> dict:
     실제 구현 시 여기에 vLLM OpenAI 호환 API 호출이 들어간다:
         requests.post("http://vllm-svc:8000/v1/chat/completions", json={...})
     """
-    header("3a", "🤖 LLM 진단  (mock: 실제로는 vLLM + Llama-3.3-70B)")
+    header("3a", "LLM DIAGNOSIS  (mock: production uses vLLM + Llama-3.3-70B)")
 
     # LLM에 전달할 프롬프트 구성 (System / Context / Output 블록)
     prompt = f"""[System]
-당신은 시니어 Kubernetes SRE이자 JVM 운영 전문가다.
-Pod 장애 컨텍스트를 분석해 root cause를 JSON으로만 응답하라.
+You are a senior Kubernetes SRE and JVM operations expert.
+Analyze the Pod failure context below and return the root cause as JSON only.
 
 [Context]
-- Alert    : {alert['alertname']}
-- Pod      : {alert['pod']} (namespace={alert['namespace']})
-- Reason   : {alert['reason']} / exit_code={alert['exit_code']}
-- Memory   : usage_peak={alert['memory_usage_peak']} limit={alert['memory_limit']}
+- Alert        : {alert['alertname']}
+- Pod          : {alert['pod']} (namespace={alert['namespace']})
+- Reason       : {alert['reason']} / exit_code={alert['exit_code']}
+- Memory       : usage_peak={alert['memory_usage_peak']} limit={alert['memory_limit']}
 - Critical Log : "{context['critical_log']}"
-- Events   : OOMKilled, BackOff x5 (최근 8분)
+- Events       : OOMKilled, BackOff x5 (last 8 minutes)
 
 [Output]
-아래 스키마를 따르는 JSON만 출력. 자연어 설명 금지.
+Return JSON matching the schema below. No natural language.
 {{
-  "root_cause": "<1문장 근본 원인>",
-  "confidence": <0-100 정수>,
-  "evidence": ["<증거1>", "<증거2>", ...]
+  "root_cause": "<one-sentence root cause>",
+  "confidence": <integer 0-100>,
+  "evidence": ["<evidence 1>", "<evidence 2>", ...]
 }}
 """
 
-    print(f"{C.MAGENTA}--- LLM 입력 프롬프트 ---{C.RESET}")
+    print(f"{C.MAGENTA}--- LLM Input Prompt ---{C.RESET}")
     print(f"{C.DIM}{prompt}{C.RESET}")
 
     pause(1.2)
@@ -217,19 +218,20 @@ Pod 장애 컨텍스트를 분석해 root cause를 JSON으로만 응답하라.
     # 실제 구현 시 여기에 vLLM API 호출 결과 파싱.
     # mock 응답: 하드코딩된 결정론적 결과
     llm_response = {
-        "root_cause": "JVM heap이 컨테이너 limit 도달. 배치 처리 시 메모리 회수 지연 의심",
+        "root_cause": "JVM heap reached container limit; delayed memory "
+                      "reclamation during batch processing suspected",
         "confidence": 92,
         "evidence": [
-            "OOMKilled Code 137",
-            "Memory Usage 480→512Mi (limit 100% 도달)",
-            "Java heap space 오류 로그",
+            "OOMKilled exit code 137",
+            "Memory usage 480Mi -> 512Mi (100% of limit)",
+            "Java heap space error in application logs",
         ],
     }
 
-    print(f"{C.MAGENTA}--- LLM 응답 (JSON) ---{C.RESET}")
+    print(f"{C.MAGENTA}--- LLM Response (JSON) ---{C.RESET}")
     print(json.dumps(llm_response, ensure_ascii=False, indent=2))
 
-    print(f"\n{C.GREEN}🤖 [LLM] 진단 완료 "
+    print(f"\n{C.GREEN}[LLM] Diagnosis complete "
           f"(confidence: {C.YELLOW}{llm_response['confidence']}%{C.GREEN}){C.RESET}")
 
     pause(1.0)
@@ -256,7 +258,7 @@ def decide_remediation(alert: dict, diagnosis: dict) -> dict:
     policy network를 사용한다 (state: 리소스 메트릭 벡터, action: limit/HPA 연속값).
     본 PoC에서는 발표 시연용으로 rule-based로 단순 구현한다.
     """
-    header("3b", "🎯 RL 결정  (rule-based / 실제로는 Ray RLlib + SAC + Reptile)")
+    header("3b", "RL DECISION  (rule-based / production uses Ray RLlib + SAC + Reptile)")
 
     # 현재 memory_limit 파싱 (예: "512Mi" → 512)
     current_mi = _parse_mi(alert["memory_limit"])
@@ -289,8 +291,8 @@ def decide_remediation(alert: dict, diagnosis: dict) -> dict:
     print(f"  safe_to_automate : "
           f"{C.GREEN if safe_to_automate else C.RED}{safe_to_automate}{C.RESET}")
 
-    print(f"\n{C.GREEN}🎯 [RL Agent] 결정: "
-          f"memory_limit {C.YELLOW}{current_mi}Mi → {new_mi}Mi{C.GREEN} / "
+    print(f"\n{C.GREEN}[RL Agent] Decision: "
+          f"memory_limit {C.YELLOW}{current_mi}Mi -> {new_mi}Mi{C.GREEN} / "
           f"HPA {C.YELLOW}{hpa_threshold}%{C.GREEN}{C.RESET}")
 
     pause(1.0)
@@ -305,7 +307,7 @@ def step4_notify_slack(alert: dict, diagnosis: dict, remediation: dict) -> dict:
     진단/조치안을 통합 JSON으로 묶어 Slack 승인 요청을 발송하는 단계.
     실제 구현 시 여기에 `requests.post(slack_webhook_url, json=block_kit_payload)`가 들어간다.
     """
-    header("4", "💬 Slack 승인 요청 발송  (mock)")
+    header("4", "SLACK APPROVAL REQUEST  (mock)")
 
     # kubectl patch 명령어 생성 (실제 K8s API에 전달될 최종 형태)
     patch_body = {
@@ -347,22 +349,22 @@ def step4_notify_slack(alert: dict, diagnosis: dict, remediation: dict) -> dict:
         return sum(2 if ord(ch) > 127 else 1 for ch in text)
 
     def truncate(text: str, max_w: int) -> str:
-        # 표시 폭 기준으로 자르고 말줄임표(…) 추가 (…도 2칸으로 계산)
+        # 표시 폭 기준으로 자르고 말줄임표(...) 추가
         if vlen(text) <= max_w:
             return text
         out, w = "", 0
         for ch in text:
             cw = 2 if ord(ch) > 127 else 1
-            if w + cw > max_w - 1:
+            if w + cw > max_w - 3:
                 break
             out += ch
             w += cw
-        return out + "…"
+        return out + "..."
 
     def line(text: str) -> str:
         text = truncate(text, box_width - 4)  # 좌우 여백 포함
         pad = max(0, box_width - 2 - vlen(text))
-        return f"│ {text}{' ' * pad} │"
+        return f"| {text}{' ' * pad} |"
 
     ns = alert["namespace"]
     conf = diagnosis["confidence"]
@@ -370,17 +372,17 @@ def step4_notify_slack(alert: dict, diagnosis: dict, remediation: dict) -> dict:
     new_lim = remediation["new_memory_limit"]
     hpa = remediation["hpa_threshold"]
 
-    print(f"{C.BLUE}┌{'─' * (box_width - 2)}┐{C.RESET}")
-    print(f"{C.BLUE}{line('🚨 AIOps 자동 진단 결과')}{C.RESET}")
-    print(f"{C.BLUE}├{'─' * (box_width - 2)}┤{C.RESET}")
-    print(f"{C.BLUE}{line(f'Pod        : payment-api ({ns})')}{C.RESET}")
-    print(f"{C.BLUE}{line(f'Root Cause : {root_cause}')}{C.RESET}")
-    print(f"{C.BLUE}{line(f'Confidence : {conf}%')}{C.RESET}")
-    print(f"{C.BLUE}{line(f'Remediation: {new_lim} / HPA {hpa}%')}{C.RESET}")
-    print(f"{C.BLUE}{line('[✅ 승인]   [❌ 거부]')}{C.RESET}")
-    print(f"{C.BLUE}└{'─' * (box_width - 2)}┘{C.RESET}")
+    print(f"{C.BLUE}+{'-' * (box_width - 2)}+{C.RESET}")
+    print(f"{C.BLUE}{line('AIOps Automated Diagnosis')}{C.RESET}")
+    print(f"{C.BLUE}+{'-' * (box_width - 2)}+{C.RESET}")
+    print(f"{C.BLUE}{line(f'Pod         : payment-api ({ns})')}{C.RESET}")
+    print(f"{C.BLUE}{line(f'Root Cause  : {root_cause}')}{C.RESET}")
+    print(f"{C.BLUE}{line(f'Confidence  : {conf}%')}{C.RESET}")
+    print(f"{C.BLUE}{line(f'Remediation : {new_lim} / HPA {hpa}%')}{C.RESET}")
+    print(f"{C.BLUE}{line('[ APPROVE ]   [ REJECT ]')}{C.RESET}")
+    print(f"{C.BLUE}+{'-' * (box_width - 2)}+{C.RESET}")
 
-    print(f"\n{C.GREEN}💬 [Slack] 승인 요청 발송 완료{C.RESET}")
+    print(f"\n{C.GREEN}[Slack] Approval request sent{C.RESET}")
 
     pause(1.2)
     return bundle
@@ -394,25 +396,26 @@ def step5_execute(bundle: dict) -> bool:
     운영자가 Slack 버튼으로 승인하면 K8s API patch가 실행되는 단계.
     실제 구현 시 여기에 Slack Interactive Component webhook 처리 + K8s API patch 호출이 들어간다.
     """
-    header("5", "✋ 승인 대기 및 조치 실행")
+    header("5", "APPROVAL & REMEDIATION")
 
     try:
-        answer = input(f"{C.YELLOW}→ 승인하시겠습니까? (y/n): {C.RESET}").strip().lower()
+        answer = input(f"{C.YELLOW}-> Approve remediation? (y/n): {C.RESET}").strip().lower()
     except EOFError:
         # 비대화형 실행 시(예: CI) 기본 승인 처리
-        print("(비대화형 환경 감지 → 자동 y)")
+        print("(non-interactive environment detected -> defaulting to y)")
         answer = "y"
 
     if answer == "y":
         print(f"\n{C.DIM}$ {bundle['kubectl_command']}{C.RESET}")
         pause(0.8)
-        print(f"{C.GREEN}✅ [K8s API] patch 적용 완료{C.RESET}")
+        print(f"{C.GREEN}[K8s API] Patch applied successfully{C.RESET}")
         print(f"{C.GREEN}   deployment.apps/payment-api patched{C.RESET}")
-        print(f"{C.GREEN}   → 신규 Pod 기동 중 (memory_limit "
+        print(f"{C.GREEN}   -> New pod starting (memory_limit "
               f"{bundle['remediation']['new_memory_limit']}){C.RESET}")
         return True
     else:
-        print(f"\n{C.RED}❌ 조치 취소. 운영자 수동 검토 대기{C.RESET}")
+        print(f"\n{C.RED}[Cancelled] Remediation aborted. "
+              f"Awaiting manual operator review.{C.RESET}")
         return False
 
 
@@ -424,11 +427,11 @@ def final_summary(elapsed: float, applied: bool) -> None:
     print(f"\n{C.CYAN}{'=' * 60}{C.RESET}")
     manual_sec = 25 * 60  # 수동 복구 가정치 25분
     saved_pct = (1 - elapsed / manual_sec) * 100
-    status = (f"{C.GREEN}조치 적용됨{C.RESET}" if applied
-              else f"{C.RED}운영자 검토 대기{C.RESET}")
-    print(f"⏱  자동 처리 시간 : {C.YELLOW}{elapsed:.1f}초{C.RESET}  "
-          f"(수동 복구 25분 대비 {C.YELLOW}{saved_pct:.1f}%{C.RESET} 단축)")
-    print(f"📌 처리 상태      : {status}")
+    status = (f"{C.GREEN}Remediation applied{C.RESET}" if applied
+              else f"{C.RED}Awaiting manual review{C.RESET}")
+    print(f"Automated processing time : {C.YELLOW}{elapsed:.1f}s{C.RESET}  "
+          f"({C.YELLOW}{saved_pct:.1f}%{C.RESET} faster than 25-min manual recovery)")
+    print(f"Status                    : {status}")
     print(f"{C.CYAN}{'=' * 60}{C.RESET}")
 
 
@@ -437,9 +440,10 @@ def final_summary(elapsed: float, applied: bool) -> None:
 # ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print(f"{C.BOLD}{C.CYAN}{'=' * 60}{C.RESET}")
-    print(f"{C.BOLD}{C.CYAN}AIOps PoC - payment-api OOMKilled 시나리오{C.RESET}")
+    print(f"{C.BOLD}{C.CYAN}AIOps PoC - payment-api OOMKilled Scenario{C.RESET}")
     print(f"{C.BOLD}{C.CYAN}{'=' * 60}{C.RESET}")
-    print(f"{C.DIM}(모든 외부 호출은 mock - Prometheus/LLM/Slack/K8s 전부 시뮬레이션){C.RESET}")
+    print(f"{C.DIM}(All external calls are mocked: "
+          f"Prometheus / LLM / Slack / K8s){C.RESET}")
 
     t0 = time.time()
 
