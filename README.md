@@ -29,7 +29,8 @@ AIOps-test/
 | 1     | kind 클러스터 + ingress            | pending     | (작성 예정)        |
 | 2     | kube-prometheus-stack + Loki       | pending     | (작성 예정)        |
 | 3     | n8n + Redis + Qdrant + Ollama      | pending     | (작성 예정)        |
-| 4     | RL 스텁 (FastAPI)                  | pending     | (작성 예정)        |
+| 4a    | RL 스텁 (FastAPI 휴리스틱)         | pending     | (작성 예정)        |
+| 4b    | RL 학습 (Reptile + SAC, PyTorch)   | **scaffold ready** | `aiops-lab/04-rl/README.md` |
 | 5     | Victim 앱 (OOMKilled 트리거)       | pending     | (작성 예정)        |
 | 6     | n8n 워크플로우                     | pending     | (작성 예정)        |
 | 7     | E2E 테스트                         | pending     | (작성 예정)        |
