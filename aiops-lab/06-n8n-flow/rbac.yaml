@@ -1,0 +1,62 @@
+# n8n 이 K8s API 를 호출하기 위한 ServiceAccount + RBAC.
+# n8n 컨테이너에는 kubectl 이 없으므로 워크플로우는 HTTP Request 노드로 K8s API
+# 를 직접 호출한다. 인증은 SA 의 long-lived token (Secret) 을 bearer 헤더로 사용.
+#
+# 권한:
+#   - get/list pods, pods/log, events  (컨텍스트 수집)
+#   - patch deployments                (조치 실행)
+#
+# 운영 환경에서는 namespace 를 prod 등으로 좁히고 audit policy 를 추가해야 함.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aiops-n8n
+  namespace: kube-system
+  labels:
+    aiops-lab: "true"
+---
+# K8s 1.24+ 부터는 SA 생성 시 token Secret 이 자동 생성되지 않는다.
+# 명시적으로 token Secret 을 만들어 stable token 을 확보.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aiops-n8n-token
+  namespace: kube-system
+  annotations:
+    kubernetes.io/service-account.name: aiops-n8n
+  labels:
+    aiops-lab: "true"
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aiops-remediator
+  labels:
+    aiops-lab: "true"
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "patch", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aiops-remediator
+  labels:
+    aiops-lab: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aiops-remediator
+subjects:
+  - kind: ServiceAccount
+    name: aiops-n8n
+    namespace: kube-system
