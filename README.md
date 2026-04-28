@@ -25,15 +25,19 @@ AIOps-test/
 
 | Phase | 내용 | 상태 | 매뉴얼 위치 |
 |-------|------|------|-------------|
-| 0     | VM 준비 + 의존성 설치 + preflight  | **done**    | 본 README §3 ~ §6 |
-| 1     | kind 클러스터 + ingress            | pending     | (작성 예정)        |
-| 2     | kube-prometheus-stack + Loki       | pending     | (작성 예정)        |
-| 3     | n8n + Redis + Qdrant + Ollama      | pending     | (작성 예정)        |
-| 4a    | RL 스텁 (FastAPI 휴리스틱)         | pending     | (작성 예정)        |
-| 4b    | RL 학습 (Reptile + SAC, PyTorch)   | **scaffold ready** | `aiops-lab/04-rl/README.md` |
-| 5     | Victim 앱 (OOMKilled 트리거)       | pending     | (작성 예정)        |
-| 6     | n8n 워크플로우                     | pending     | (작성 예정)        |
-| 7     | E2E 테스트                         | pending     | (작성 예정)        |
+| 0     | VM 준비 + 의존성 설치 + preflight  | **code ready** | 본 README §3 ~ §6 + `00-preflight/check.sh` |
+| 1     | kind 클러스터 + ingress            | **code ready** | `01-k8s/README.md` |
+| 2     | kube-prometheus-stack + Loki       | **code ready** | `02-observability/README.md` |
+| 3     | n8n + Redis + Qdrant + Ollama      | **code ready** | `03-workflow/README.md` |
+| 4a    | RL 스텁 (FastAPI 휴리스틱)         | **code ready** | `04a-rl-stub/README.md` |
+| 4b    | RL 학습 (Reptile + SAC, PyTorch)   | **code ready** | `04-rl/README.md` |
+| 5     | Victim 앱 (OOMKilled 트리거)       | **code ready** | `05-victim-app/README.md` |
+| 6     | n8n 워크플로우 + RBAC              | **code ready** | `06-n8n-flow/README.md` |
+| 7     | E2E 테스트                         | **code ready** | `07-tests/README.md` |
+
+전 Phase 의 코드가 작성되었으나 **VM 에서의 실제 실행 검증은 미수행**. 위 매뉴얼을 따라 한 Phase 씩 실행하면서 오류가 나면 수정하는 단계가 남아있다.
+
+빠른 일괄 실행: `cd aiops-lab && make up && make test`
 
 각 Phase 는 검증 후에만 다음으로 진행한다. 매 Phase 가 끝날 때마다 본 README 가 갱신된다.
 
