@@ -39,6 +39,9 @@ x-n8n-common: &n8n-common
     OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
     QDRANT_URL: http://qdrant:6333
     RL_DECIDE_URL: ${RL_DECIDE_URL:-http://rl-stub:8000/decide}
+    # K8s API 접근용 (06-n8n-flow/import.sh 가 .env 에 자동 주입)
+    K8S_API_URL: ${K8S_API_URL:-https://aiops-lab-control-plane:6443}
+    K8S_TOKEN: ${K8S_TOKEN:-}
   volumes:
     - n8n_data:/home/node/.n8n
     - ./n8n-kubeconfig:/home/node/.kube/config:ro

@@ -20,7 +20,10 @@
       "name": "Webhook /oom",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-1200, 0],
+      "position": [
+        -1200,
+        0
+      ],
       "webhookId": "aiops-oom",
       "notes": "Alertmanager → POST /webhook/oom. Phase 2 의 AlertmanagerConfig 가 보내는 payload 수신."
     },
@@ -33,7 +36,10 @@
       "name": "Parse Alert",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-960, 0]
+      "position": [
+        -960,
+        0
+      ]
     },
     {
       "parameters": {
@@ -44,19 +50,29 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{$env.K8S_TOKEN}}" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.K8S_TOKEN}}"
+            }
           ]
         },
         "options": {
           "allowUnauthorizedCerts": true,
-          "response": { "response": { "responseFormat": "json" } }
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
         }
       },
       "id": "node-3a-get-pod",
       "name": "K8s GET pod",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-720, -160],
+      "position": [
+        -720,
+        -160
+      ],
       "notes": "K8S_API_URL = https://aiops-lab-control-plane:6443 (kind 내부 호스트명). 06-n8n-flow/import.sh 가 .env 에 자동 주입."
     },
     {
@@ -68,19 +84,29 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{$env.K8S_TOKEN}}" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.K8S_TOKEN}}"
+            }
           ]
         },
         "options": {
           "allowUnauthorizedCerts": true,
-          "response": { "response": { "responseFormat": "text" } }
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
         }
       },
       "id": "node-3b-get-logs",
       "name": "K8s GET pod logs (previous)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-720, 0]
+      "position": [
+        -720,
+        0
+      ]
     },
     {
       "parameters": {
@@ -91,30 +117,43 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{$env.K8S_TOKEN}}" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.K8S_TOKEN}}"
+            }
           ]
         },
         "options": {
           "allowUnauthorizedCerts": true,
-          "response": { "response": { "responseFormat": "json" } }
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
         }
       },
       "id": "node-3c-get-events",
       "name": "K8s GET events",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-720, 160]
+      "position": [
+        -720,
+        160
+      ]
     },
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "// 3 HTTP 결과 + parsed alert 를 합쳐서 LLM 입력 prompt 생성.\n// n8n 의 mergeBy/expression 만으로 묶기 까다로워서 모든 input 을 Code 에서 합침.\nconst alertItem = $('Parse Alert').first().json;\nconst pod    = $('K8s GET pod').first().json || {};\nconst logs   = $('K8s GET pod logs (previous)').first().json || $('K8s GET pod logs (previous)').first();\nconst events = $('K8s GET events').first().json || {};\n\n// describe-style 요약 (전체 dump 는 너무 길어서 핵심만)\nconst container = (pod.spec && pod.spec.containers && pod.spec.containers[0]) || {};\nconst lastState = ((pod.status && pod.status.containerStatuses && pod.status.containerStatuses[0]) || {}).lastState || {};\nconst describe = [\n  `Name:      ${pod.metadata && pod.metadata.name}`,\n  `Namespace: ${pod.metadata && pod.metadata.namespace}`,\n  `Status:    ${pod.status && pod.status.phase}`,\n  `Container: ${container.name} (${container.image})`,\n  `Limits:    ${JSON.stringify(container.resources && container.resources.limits)}`,\n  `Requests:  ${JSON.stringify(container.resources && container.resources.requests)}`,\n  `LastState: ${JSON.stringify(lastState)}`,\n].join('\\n');\n\nconst logsText = (logs && (logs.body || logs.text || (typeof logs === 'string' ? logs : JSON.stringify(logs))))\n  .toString().split('\\n').slice(-80).join('\\n');\n\nconst eventLines = (events.items || []).slice(-15).map(e =>\n  `${e.lastTimestamp || e.eventTime || ''}  ${e.type}  ${e.reason}  ${e.message}`\n).join('\\n');\n\nconst userPrompt = `[ALERT]\\n${JSON.stringify({\n  alertname: alertItem.alertname,\n  severity:  alertItem.severity,\n  summary:   alertItem.summary,\n})}\\n\\n[POD]\\nnamespace: ${alertItem.namespace}\\nname:      ${alertItem.pod}\\ncontainer: ${alertItem.container}\\n\\n[POD describe (truncated)]\\n${describe}\\n\\n[Container logs — previous instance, last 80 lines]\\n${logsText}\\n\\n[Recent events]\\n${eventLines}`;\n\nconst systemPrompt = `You are a senior Kubernetes SRE and JVM/Python operations expert.\\nReturn JSON only, schema: {\"root_cause\":str,\"confidence\":int,\"evidence\":[str]}`;\n\nreturn [{\n  json: {\n    alert: alertItem,\n    pod_summary: describe,\n    logs_text: logsText,\n    events_text: eventLines,\n    system_prompt: systemPrompt,\n    user_prompt: userPrompt,\n    // RL stub 입력에 사용할 메트릭 추정치\n    current_limit_mb: parseInt((container.resources && container.resources.limits && container.resources.limits.memory || '128Mi').replace(/[^0-9]/g, '')) || 128,\n    restart_count: ((pod.status && pod.status.containerStatuses && pod.status.containerStatuses[0]) || {}).restartCount || 0,\n  }\n}];"
+        "jsCode": "// 3 HTTP 결과 + parsed alert 를 합쳐서 LLM 입력 prompt 생성.\n// n8n 의 mergeBy/expression 만으로 묶기 까다로워서 모든 input 을 Code 에서 합침.\nconst alertItem = $('Parse Alert').first().json;\nconst pod    = $('K8s GET pod').first().json || {};\nconst logsItem = $('K8s GET pod logs (previous)').first();\nconst logsJson = (logsItem && logsItem.json) || {};\nconst logs = (typeof logsJson === 'string') ? logsJson\n  : (logsJson.data ?? logsJson.body ?? logsJson.text ?? (logsItem && logsItem.binary ? '' : ''));\nconst events = $('K8s GET events').first().json || {};\n\n// describe-style 요약 (전체 dump 는 너무 길어서 핵심만)\nconst container = (pod.spec && pod.spec.containers && pod.spec.containers[0]) || {};\nconst lastState = ((pod.status && pod.status.containerStatuses && pod.status.containerStatuses[0]) || {}).lastState || {};\nconst describe = [\n  `Name:      ${pod.metadata && pod.metadata.name}`,\n  `Namespace: ${pod.metadata && pod.metadata.namespace}`,\n  `Status:    ${pod.status && pod.status.phase}`,\n  `Container: ${container.name} (${container.image})`,\n  `Limits:    ${JSON.stringify(container.resources && container.resources.limits)}`,\n  `Requests:  ${JSON.stringify(container.resources && container.resources.requests)}`,\n  `LastState: ${JSON.stringify(lastState)}`,\n].join('\\n');\n\nconst logsText = logs ? String(logs).split('\\n').slice(-80).join('\\n') : '(no previous logs available)';\n\nconst eventLines = (events.items || []).slice(-15).map(e =>\n  `${e.lastTimestamp || e.eventTime || ''}  ${e.type}  ${e.reason}  ${e.message}`\n).join('\\n');\n\nconst userPrompt = `[ALERT]\\n${JSON.stringify({\n  alertname: alertItem.alertname,\n  severity:  alertItem.severity,\n  summary:   alertItem.summary,\n})}\\n\\n[POD]\\nnamespace: ${alertItem.namespace}\\nname:      ${alertItem.pod}\\ncontainer: ${alertItem.container}\\n\\n[POD describe (truncated)]\\n${describe}\\n\\n[Container logs — previous instance, last 80 lines]\\n${logsText}\\n\\n[Recent events]\\n${eventLines}`;\n\nconst systemPrompt = `You are a senior Kubernetes SRE and JVM/Python operations expert.\\nReturn JSON only, schema: {\"root_cause\":str,\"confidence\":int,\"evidence\":[str]}`;\n\nreturn [{\n  json: {\n    alert: alertItem,\n    pod_summary: describe,\n    logs_text: logsText,\n    events_text: eventLines,\n    system_prompt: systemPrompt,\n    user_prompt: userPrompt,\n    // RL stub 입력에 사용할 메트릭 추정치\n    current_limit_mb: parseInt((container.resources && container.resources.limits && container.resources.limits.memory || '128Mi').replace(/[^0-9]/g, '')) || 128,\n    restart_count: ((pod.status && pod.status.containerStatuses && pod.status.containerStatuses[0]) || {}).restartCount || 0,\n  }\n}];"
       },
       "id": "node-4-build-prompt",
       "name": "Build LLM Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-480, 0]
+      "position": [
+        -480,
+        0
+      ]
     },
     {
       "parameters": {
@@ -125,14 +164,21 @@
         "jsonBody": "={\n  \"model\": \"{{$env.OLLAMA_MODEL}}\",\n  \"stream\": false,\n  \"format\": \"json\",\n  \"messages\": [\n    {\"role\": \"system\", \"content\": {{ JSON.stringify($json.system_prompt) }}},\n    {\"role\": \"user\",   \"content\": {{ JSON.stringify($json.user_prompt) }}}\n  ]\n}",
         "options": {
           "timeout": 60000,
-          "response": { "response": { "responseFormat": "json" } }
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
         }
       },
       "id": "node-5-llm",
       "name": "LLM Diagnose (Ollama)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-240, 0]
+      "position": [
+        -240,
+        0
+      ]
     },
     {
       "parameters": {
@@ -143,7 +189,10 @@
       "name": "Parse LLM JSON",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [0, 0]
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
@@ -154,14 +203,21 @@
         "jsonBody": "={\n  \"service\": {{ JSON.stringify($json.alert.pod) }},\n  \"current_limit_mb\": {{ $json.current_limit_mb }},\n  \"current_usage_mb\": {{ $json.current_limit_mb }},\n  \"usage_peak_mb\": {{ $json.current_limit_mb }},\n  \"restart_count\": {{ $json.restart_count }},\n  \"traffic_qps\": 100\n}",
         "options": {
           "timeout": 10000,
-          "response": { "response": { "responseFormat": "json" } }
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
         }
       },
       "id": "node-7-rl-decide",
       "name": "RL Decide",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [240, 0]
+      "position": [
+        240,
+        0
+      ]
     },
     {
       "parameters": {
@@ -172,7 +228,10 @@
       "name": "Merge RL",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [480, 0]
+      "position": [
+        480,
+        0
+      ]
     },
     {
       "parameters": {
@@ -183,8 +242,14 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{$env.SLACK_BOT_TOKEN}}" },
-            { "name": "Content-Type",  "value": "application/json; charset=utf-8" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SLACK_BOT_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
           ]
         },
         "sendBody": true,
@@ -192,14 +257,21 @@
         "jsonBody": "={\n  \"channel\": \"{{$env.SLACK_CHANNEL}}\",\n  \"text\": \"AIOps 자동 진단 결과 — {{ $json.alert.namespace }}/{{ $json.alert.pod }}\",\n  \"blocks\": [\n    {\"type\":\"header\",\"text\":{\"type\":\"plain_text\",\"text\":\"AIOps Automated Diagnosis\"}},\n    {\"type\":\"section\",\"fields\":[\n      {\"type\":\"mrkdwn\",\"text\":\"*Pod*\\n{{ $json.alert.namespace }}/{{ $json.alert.pod }}\"},\n      {\"type\":\"mrkdwn\",\"text\":\"*Container*\\n{{ $json.alert.container }}\"},\n      {\"type\":\"mrkdwn\",\"text\":\"*Confidence*\\n{{ $json.diagnosis.confidence }}%\"},\n      {\"type\":\"mrkdwn\",\"text\":\"*New Limit*\\n{{ $json.remediation.recommended_limit_mb }} Mi\"}\n    ]},\n    {\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Root Cause*\\n{{ $json.diagnosis.root_cause }}\"}},\n    {\"type\":\"actions\",\"block_id\":\"aiops_actions\",\"elements\":[\n      {\"type\":\"button\",\"action_id\":\"approve_patch\",\"style\":\"primary\",\"text\":{\"type\":\"plain_text\",\"text\":\"Approve\"},\"value\":{{ JSON.stringify(JSON.stringify({namespace: $json.alert.namespace, deployment: 'payment-api', container: $json.alert.container, new_limit_mb: $json.remediation.recommended_limit_mb})) }}},\n      {\"type\":\"button\",\"action_id\":\"reject_patch\",\"style\":\"danger\",\"text\":{\"type\":\"plain_text\",\"text\":\"Reject\"},\"value\":\"reject\"}\n    ]}\n  ]\n}",
         "options": {
           "timeout": 10000,
-          "response": { "response": { "responseFormat": "json" } }
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
         }
       },
       "id": "node-9-slack-post",
       "name": "Slack Post (Block Kit)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [720, 0]
+      "position": [
+        720,
+        0
+      ]
     },
     {
       "parameters": {
@@ -207,13 +279,18 @@
         "path": "slack-approve",
         "responseMode": "lastNode",
         "responseData": "allEntries",
-        "options": { "rawBody": true }
+        "options": {
+          "rawBody": true
+        }
       },
       "id": "node-10-slack-callback",
       "name": "Webhook /slack-approve",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-1200, 480],
+      "position": [
+        -1200,
+        480
+      ],
       "webhookId": "aiops-slack-approve",
       "notes": "Slack interactivity 콜백. Slack App Settings → Interactivity Request URL 에 등록한 URL 의 path."
     },
@@ -226,18 +303,26 @@
       "name": "Parse Slack Action",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-960, 480]
+      "position": [
+        -960,
+        480
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true },
+          "options": {
+            "caseSensitive": true
+          },
           "combinator": "and",
           "conditions": [
             {
               "leftValue": "={{ $json.action_id }}",
               "rightValue": "approve_patch",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ]
         },
@@ -247,7 +332,10 @@
       "name": "IF approve_patch",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [-720, 480]
+      "position": [
+        -720,
+        480
+      ]
     },
     {
       "parameters": {
@@ -258,8 +346,14 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{$env.K8S_TOKEN}}" },
-            { "name": "Content-Type",  "value": "application/strategic-merge-patch+json" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.K8S_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/strategic-merge-patch+json"
+            }
           ]
         },
         "sendBody": true,
@@ -267,14 +361,21 @@
         "jsonBody": "={\n  \"spec\": {\n    \"template\": {\n      \"spec\": {\n        \"containers\": [\n          {\n            \"name\": \"{{ $json.decision.container }}\",\n            \"resources\": { \"limits\": { \"memory\": \"{{ $json.decision.new_limit_mb }}Mi\" } }\n          }\n        ]\n      }\n    }\n  }\n}",
         "options": {
           "allowUnauthorizedCerts": true,
-          "response": { "response": { "responseFormat": "json" } }
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
         }
       },
       "id": "node-13-patch",
       "name": "K8s PATCH deployment",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-480, 400]
+      "position": [
+        -480,
+        400
+      ]
     },
     {
       "parameters": {
@@ -283,13 +384,18 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"text\": \"✅ Patch applied: {{ $('Parse Slack Action').first().json.decision.namespace }}/{{ $('Parse Slack Action').first().json.decision.deployment }} memory_limit -> {{ $('Parse Slack Action').first().json.decision.new_limit_mb }}Mi (by {{ $('Parse Slack Action').first().json.user }})\"\n}",
-        "options": { "timeout": 10000 }
+        "options": {
+          "timeout": 10000
+        }
       },
       "id": "node-14-slack-confirm",
       "name": "Slack Confirm Applied",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-240, 400]
+      "position": [
+        -240,
+        400
+      ]
     },
     {
       "parameters": {
@@ -298,40 +404,199 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"text\": \"❌ Remediation rejected by {{ $json.user }}. Manual review needed.\"\n}",
-        "options": { "timeout": 10000 }
+        "options": {
+          "timeout": 10000
+        }
       },
       "id": "node-15-slack-reject",
       "name": "Slack Confirm Rejected",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-480, 600]
+      "position": [
+        -480,
+        600
+      ]
     }
   ],
   "connections": {
-    "Webhook /oom":                  { "main": [[{ "node": "Parse Alert",          "type": "main", "index": 0 }]] },
-    "Parse Alert":                   { "main": [[
-      { "node": "K8s GET pod",                  "type": "main", "index": 0 },
-      { "node": "K8s GET pod logs (previous)",  "type": "main", "index": 0 },
-      { "node": "K8s GET events",               "type": "main", "index": 0 }
-    ]] },
-    "K8s GET pod":                   { "main": [[{ "node": "Build LLM Prompt",     "type": "main", "index": 0 }]] },
-    "K8s GET pod logs (previous)":   { "main": [[{ "node": "Build LLM Prompt",     "type": "main", "index": 0 }]] },
-    "K8s GET events":                { "main": [[{ "node": "Build LLM Prompt",     "type": "main", "index": 0 }]] },
-    "Build LLM Prompt":              { "main": [[{ "node": "LLM Diagnose (Ollama)","type": "main", "index": 0 }]] },
-    "LLM Diagnose (Ollama)":         { "main": [[{ "node": "Parse LLM JSON",       "type": "main", "index": 0 }]] },
-    "Parse LLM JSON":                { "main": [[{ "node": "RL Decide",            "type": "main", "index": 0 }]] },
-    "RL Decide":                     { "main": [[{ "node": "Merge RL",             "type": "main", "index": 0 }]] },
-    "Merge RL":                      { "main": [[{ "node": "Slack Post (Block Kit)","type": "main","index": 0 }]] },
-
-    "Webhook /slack-approve":        { "main": [[{ "node": "Parse Slack Action",   "type": "main", "index": 0 }]] },
-    "Parse Slack Action":            { "main": [[{ "node": "IF approve_patch",     "type": "main", "index": 0 }]] },
-    "IF approve_patch": {
+    "Webhook /oom": {
       "main": [
-        [{ "node": "K8s PATCH deployment", "type": "main", "index": 0 }],
-        [{ "node": "Slack Confirm Rejected","type": "main", "index": 0 }]
+        [
+          {
+            "node": "Parse Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "K8s PATCH deployment":          { "main": [[{ "node": "Slack Confirm Applied","type": "main", "index": 0 }]] }
+    "Parse Alert": {
+      "main": [
+        [
+          {
+            "node": "K8s GET pod",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "K8s GET pod logs (previous)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "K8s GET events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K8s GET pod": {
+      "main": [
+        [
+          {
+            "node": "Build LLM Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K8s GET pod logs (previous)": {
+      "main": [
+        [
+          {
+            "node": "Build LLM Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K8s GET events": {
+      "main": [
+        [
+          {
+            "node": "Build LLM Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LLM Prompt": {
+      "main": [
+        [
+          {
+            "node": "LLM Diagnose (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Diagnose (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Parse LLM JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse LLM JSON": {
+      "main": [
+        [
+          {
+            "node": "RL Decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RL Decide": {
+      "main": [
+        [
+          {
+            "node": "Merge RL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge RL": {
+      "main": [
+        [
+          {
+            "node": "Slack Post (Block Kit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook /slack-approve": {
+      "main": [
+        [
+          {
+            "node": "Parse Slack Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Slack Action": {
+      "main": [
+        [
+          {
+            "node": "IF approve_patch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF approve_patch": {
+      "main": [
+        [
+          {
+            "node": "K8s PATCH deployment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack Confirm Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K8s PATCH deployment": {
+      "main": [
+        [
+          {
+            "node": "Slack Confirm Applied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "tags": [{ "name": "aiops-lab" }, { "name": "phase6" }]
+  "tags": [
+    {
+      "name": "aiops-lab"
+    },
+    {
+      "name": "phase6"
+    }
+  ]
 }

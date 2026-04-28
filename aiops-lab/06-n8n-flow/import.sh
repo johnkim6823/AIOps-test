@@ -31,7 +31,7 @@ kubectl apply -f "${SCRIPT_DIR}/rbac.yaml"
 
 # Token Secret 이 채워질 때까지 대기 (controller 가 token data 를 비동기로 기록)
 log "waiting for SA token secret to be populated"
-for i in {1..30}; do
+for _ in $(seq 1 30); do
   TOKEN_B64="$(kubectl -n kube-system get secret aiops-n8n-token -o jsonpath='{.data.token}' 2>/dev/null || true)"
   if [ -n "${TOKEN_B64}" ]; then
     break

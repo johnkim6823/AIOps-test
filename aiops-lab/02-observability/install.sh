@@ -13,12 +13,25 @@ PROM_RELEASE=prom-stack
 LOKI_NS=logging
 LOKI_RELEASE=loki
 
-# Alertmanager 가 호출할 n8n webhook URL.
-# n8n 은 Phase 3 에서 호스트의 5678 포트로 띄우고, kind 노드 컨테이너에서
-# 호스트로 나가는 IP 를 자동 감지한다. 명시 지정하려면 환경변수 사용:
-#     N8N_WEBHOOK_URL="http://10.0.2.2:5678/webhook/oom" ./install.sh
-HOST_IP_DEFAULT="$(ip route get 8.8.8.8 2>/dev/null \
-  | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}' || true)"
+# Alertmanager 가 호출할 n8n webhook URL 자동 감지.
+#
+# Alertmanager Pod 는 kind 클러스터 안에 있고, n8n 은 호스트의 5678 포트로
+# 떠있다. Pod → 호스트 도달 경로:
+#   1순위: docker 의 'kind' 네트워크 gateway (보통 172.18.0.1) — 가장 안정적.
+#          Pod traffic 이 cluster CNI → kind network gateway → host:5678 로 흐름.
+#   2순위: VM 의 LAN IP (Bridged adapter 사용 시 외부에서도 도달).
+#   3순위: 'host.docker.internal' — Linux Docker 24+ extra_hosts 설정 필요.
+# 명시 지정: N8N_WEBHOOK_URL="http://10.0.2.2:5678/webhook/oom" ./install.sh
+detect_host_ip() {
+  local gw
+  gw="$(docker network inspect kind --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null)"
+  if [ -n "${gw}" ] && [ "${gw}" != "<no value>" ]; then
+    echo "${gw}"; return
+  fi
+  ip route get 8.8.8.8 2>/dev/null \
+    | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}'
+}
+HOST_IP_DEFAULT="$(detect_host_ip)"
 HOST_IP_DEFAULT="${HOST_IP_DEFAULT:-host.docker.internal}"
 N8N_WEBHOOK_URL="${N8N_WEBHOOK_URL:-http://${HOST_IP_DEFAULT}:5678/webhook/oom}"
 
