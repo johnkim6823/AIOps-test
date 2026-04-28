@@ -1,0 +1,46 @@
+# grafana/loki-stack values (loki + promtail bundle, single-binary mode).
+#
+# loki-stack 차트가 promtail 까지 함께 깔아주므로 로그 수집 → Loki 까지 한 번에 끝.
+# Grafana / Prometheus 는 kube-prometheus-stack 쪽에서 이미 깔리므로 여기서는 끔.
+
+loki:
+  enabled: true
+  isDefault: false
+  persistence:
+    enabled: true
+    size: 5Gi
+    # kind 의 standard StorageClass 사용 (rancher.io/local-path)
+    storageClassName: standard
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  config:
+    table_manager:
+      retention_deletes_enabled: true
+      retention_period: 24h
+
+promtail:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  # 기본 scrape 설정으로 모든 K8s pod 의 stdout/stderr 를 Loki 로 전송.
+  # AIOps 가 사용할 핵심 로그(java.lang.OutOfMemoryError 등)는 stdout 으로 흐른다.
+
+# 다른 번들 컴포넌트는 kube-prometheus-stack 과 중복되므로 모두 끔
+grafana:
+  enabled: false
+prometheus:
+  enabled: false
+filebeat:
+  enabled: false
+fluent-bit:
+  enabled: false
+logstash:
+  enabled: false

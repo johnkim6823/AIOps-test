@@ -1,0 +1,36 @@
+# PodOOMKilled 알람 룰.
+#
+# kube-state-metrics 가 노출하는 last_terminated_reason 메트릭을 사용한다.
+# 이 메트릭은 Pod 가 다시 Running 상태로 가더라도 마지막 종료 사유를 유지하므로,
+# CrashLoopBackOff 가 아닌 단발성 OOM 도 정상적으로 감지된다.
+#
+# for: 30s — 잠깐 OOM 이 발생했다가 즉시 정상 복귀한 단발 케이스를 잡되,
+# 5초 이내의 일시적 메트릭 노이즈는 제외.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: aiops-pod-oomkilled
+  namespace: monitoring
+  labels:
+    aiops-lab: "true"
+    release: prom-stack
+spec:
+  groups:
+    - name: aiops.pod.oomkilled
+      interval: 15s
+      rules:
+        - alert: PodOOMKilled
+          expr: |
+            kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+          for: 30s
+          labels:
+            severity: critical
+            team: aiops
+            alert_kind: oomkilled
+          annotations:
+            summary: "Pod OOMKilled — {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }})"
+            description: |
+              Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }}
+              terminated with reason=OOMKilled (exit 137). 마지막 종료 사유로 OOM 이
+              30초 이상 지속됨. AIOps 자동 진단 파이프라인이 트리거된다.
+            runbook_url: "https://github.com/johnkim6823/AIOps-test#oomkilled"

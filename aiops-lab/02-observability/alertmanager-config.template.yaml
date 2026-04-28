@@ -1,0 +1,28 @@
+# AlertmanagerConfig 템플릿.
+# install.sh 가 __N8N_WEBHOOK_URL__ 자리를 실제 URL 로 치환한 뒤 적용한다.
+# (치환 결과는 alertmanager-config.rendered.yaml 로 작성되며 .gitignore 처리됨)
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: aiops-oom-to-n8n
+  namespace: monitoring
+  labels:
+    aiops-lab: "true"
+spec:
+  route:
+    receiver: n8n-oom
+    groupBy: [namespace, pod, container]
+    groupWait: 10s
+    groupInterval: 30s
+    repeatInterval: 5m
+    matchers:
+      - name: alertname
+        value: PodOOMKilled
+        matchType: '='
+  receivers:
+    - name: n8n-oom
+      webhookConfigs:
+        - url: __N8N_WEBHOOK_URL__
+          sendResolved: false
+          httpConfig:
+            followRedirects: true

@@ -21,6 +21,9 @@ charts/*.tgz
 .helm/
 kind-*.yaml.bak
 
+# Phase 2: rendered AlertmanagerConfig (contains environment-specific webhook URL)
+aiops-lab/02-observability/alertmanager-config.rendered.yaml
+
 # n8n local data
 03-workflow/n8n_data/
 03-workflow/qdrant_data/

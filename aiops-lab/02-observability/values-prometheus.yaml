@@ -1,0 +1,122 @@
+# kube-prometheus-stack values for the AIOps lab.
+#
+# 단일 VM 위에서 가볍게 돌리기 위해 다음을 조정:
+#   - Prometheus retention 6h, storage 5Gi (메트릭 한두 시간이면 충분)
+#   - Grafana persistence 끔, admin 비밀번호 고정 (데모용)
+#   - kind 환경에서 안 보이는 컴포넌트 (kube-controller-manager, scheduler,
+#     kube-proxy, etcd) 의 ServiceMonitor / 룰 비활성화
+#   - 우리 PrometheusRule(aiops-lab=true) / AlertmanagerConfig(aiops-lab=true)
+#     를 자동 발견하도록 selector 재작성
+#
+# 운영 환경 이식 시 retention, replicas, resources 부분만 키우면 된다.
+
+defaultRules:
+  create: true
+  rules:
+    alertmanager: false
+    etcd: false
+    kubeControllerManager: false
+    kubeProxy: false
+    kubeScheduler: false
+    kubernetesApps: true
+    kubernetesResources: true
+
+prometheus:
+  prometheusSpec:
+    retention: 6h
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        memory: 1Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+    # 모든 네임스페이스 / 라벨의 PrometheusRule, ServiceMonitor, PodMonitor 자동 발견
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+
+alertmanager:
+  alertmanagerSpec:
+    # 우리 AlertmanagerConfig CR 만 매칭 (conflict 방지)
+    alertmanagerConfigSelector:
+      matchLabels:
+        aiops-lab: "true"
+    # type: None — alertmanager-config 의 route matchers 만 사용. 기본값 OnNamespace
+    # 는 자동으로 namespace 라벨 매처를 끼워넣어서 cross-ns 라우팅을 막는다.
+    alertmanagerConfigMatcherStrategy:
+      type: None
+    resources:
+      requests:
+        cpu: 50m
+        memory: 100Mi
+      limits:
+        memory: 256Mi
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+
+grafana:
+  enabled: true
+  adminPassword: aiops-lab          # 데모용. 운영에서는 secret 분리.
+  persistence:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      memory: 200Mi
+  service:
+    type: ClusterIP
+  # Phase 2 에서 깔리는 Loki 를 데이터 소스로 미리 등록 (Loki 가 늦게 떠도 grafana
+  # 는 lazy 하게 연결하므로 무관)
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki.logging.svc.cluster.local:3100
+      isDefault: false
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      memory: 200Mi
+  admissionWebhooks:
+    enabled: true
+    patch:
+      enabled: true
+
+# ---- 클러스터 컴포넌트별 토글 ----
+kubeApiServer:
+  enabled: true
+kubelet:
+  enabled: true
+kubeControllerManager:
+  enabled: false   # kind 에서는 별도 노출 안 됨
+kubeScheduler:
+  enabled: false   # 동일
+kubeProxy:
+  enabled: false   # iptables 모드라 메트릭 노출 안 됨
+kubeEtcd:
+  enabled: false
+nodeExporter:
+  enabled: true
+kubeStateMetrics:
+  enabled: true    # PodOOMKilled 룰의 데이터 소스 (필수)
