@@ -24,11 +24,14 @@ kind-*.yaml.bak
 # Phase 2: rendered AlertmanagerConfig (contains environment-specific webhook URL)
 aiops-lab/02-observability/alertmanager-config.rendered.yaml
 
-# n8n local data
-03-workflow/n8n_data/
-03-workflow/qdrant_data/
-03-workflow/ollama_data/
-03-workflow/redis_data/
+# Phase 3: n8n / qdrant / ollama / redis local volumes (docker compose volumes,
+# 보통 docker 가 관리하지만 host bind 시도용 경로도 미리 차단)
+aiops-lab/03-workflow/n8n_data/
+aiops-lab/03-workflow/qdrant_data/
+aiops-lab/03-workflow/ollama_data/
+aiops-lab/03-workflow/redis_data/
+# Phase 3: kind kubeconfig dump (cluster 생성 시점에 따라 server URL 이 변함)
+aiops-lab/03-workflow/n8n-kubeconfig
 
 # OS / editor
 .DS_Store
