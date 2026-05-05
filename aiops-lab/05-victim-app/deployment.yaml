@@ -32,13 +32,41 @@ spec:
         - name: api
           image: payment-api:demo
           imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
           env:
             - name: APP_VERSION
               value: "v2.4.1"
             - name: BATCH_MIN
               value: "50"
             - name: BATCH_MAX
-              value: "200"
+              value: "100"
+            - name: BATCH_INTERVAL_SEC
+              value: "1.5"
+            - name: HEALTH_PORT
+              value: "8080"
+          # 메모리 부족 도달 시 readinessProbe 가 실패 → 트래픽에서 제외 →
+          # 곧이어 cgroup 이 SIGKILL → OOMKilled. 운영의 cascading-failure 흐름 시연.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            # OOM 직전엔 healthz 도 503 → kubelet 이 restart. PrometheusRule 의
+            # last_terminated_reason=OOMKilled 메트릭은 cgroup OOM 이 먼저 떨어졌을 때만
+            # 1 이 되므로, 이 livenessProbe 가 먼저 trigger 되면 reason 이 다를 수 있다.
+            # 시연에서 OOMKilled 가 안정적으로 잡히게 하려면 livenessProbe 를 삭제하거나
+            # failureThreshold 를 매우 크게 하면 된다.
+            failureThreshold: 6
           resources:
             requests:
               cpu: 50m
@@ -47,6 +75,7 @@ spec:
               cpu: 200m
               memory: 128Mi
       restartPolicy: Always
+      terminationGracePeriodSeconds: 10
 ---
 # Service: 후속 통신용 (Phase 6 워크플로우가 'kubectl get svc' 등으로 참조 가능).
 # 메모리 OOM 시연 자체에는 트래픽이 필요 없지만, 실 운영 흉내를 위해 함께 만든다.

@@ -1,19 +1,23 @@
 # Phase 3: n8n (Queue Mode) + Redis + Qdrant + Ollama
 #
 # n8n 은 main(REST/UI) + worker 2개 컨테이너로 분리하여 Queue Mode 시연.
-# Redis 가 큐 백엔드. ollama-pull 은 1회성 init 컨테이너로 모델을 받아오고 종료한다.
+# Redis 가 큐 백엔드. ollama-pull 은 1회성 init 컨테이너로 모델을 받아오고 종료.
 #
 # 네트워크 구성:
 #   - compose 자체 네트워크: redis, qdrant, ollama, n8n*, ollama-pull 끼리 통신
-#   - 외부 'kind' 네트워크: kind 클러스터의 control-plane 컨테이너에 접근 가능
-#     하도록 n8n / n8n-worker 만 추가 attach. Phase 1 의 kind 클러스터가 떠있어야
-#     이 네트워크가 존재. 없으면 docker compose up 이 실패하므로 up.sh 가 사전 체크.
+#   - 외부 'kind' 네트워크: n8n / n8n-worker 만 attach. 'aiops-lab-control-plane'
+#     호스트명으로 K8s API 직접 호출 가능. Phase 1 의 kind 클러스터가 떠있어야 함.
 #
-# kubeconfig: up.sh 가 'kind get kubeconfig --internal --name aiops-lab' 로 생성한
-#   ./n8n-kubeconfig (컨테이너에서 control-plane 호스트명 'aiops-lab-control-plane'
-#   로 API 호출 가능) 을 read-only 마운트.
+# 모든 서비스에 healthcheck + 보수적 메모리 제한 설정 — VM 12GB 안에서 안정 동작.
 
 name: aiops-lab
+
+# 공통 logging 옵션 — 디스크 폭주 방지 (compose 의 default driver=json-file)
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 x-n8n-common: &n8n-common
   image: n8nio/n8n:1.61.0
@@ -30,7 +34,6 @@ x-n8n-common: &n8n-common
     N8N_RUNNERS_ENABLED: "true"
     N8N_LOG_LEVEL: info
     KUBECONFIG: /home/node/.kube/config
-    # 외부 비밀값(.env 에서 로드)
     SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
     SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
     SLACK_CHANNEL: ${SLACK_CHANNEL:-#alerts}
@@ -39,7 +42,6 @@ x-n8n-common: &n8n-common
     OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
     QDRANT_URL: http://qdrant:6333
     RL_DECIDE_URL: ${RL_DECIDE_URL:-http://rl-stub:8000/decide}
-    # K8s API 접근용 (06-n8n-flow/import.sh 가 .env 에 자동 주입)
     K8S_API_URL: ${K8S_API_URL:-https://aiops-lab-control-plane:6443}
     K8S_TOKEN: ${K8S_TOKEN:-}
   volumes:
@@ -50,6 +52,7 @@ x-n8n-common: &n8n-common
   networks:
     - default
     - kind
+  logging: *default-logging
   restart: unless-stopped
 
 services:
@@ -61,9 +64,15 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+      start_period: 5s
     volumes:
       - redis_data:/data
     networks: [default]
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     restart: unless-stopped
 
   qdrant:
@@ -71,9 +80,21 @@ services:
     container_name: aiops-qdrant
     ports:
       - "127.0.0.1:6333:6333"
+    healthcheck:
+      # Qdrant 의 /readyz 는 200 OK 또는 fail 반환 — wget --spider 로 충분
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     volumes:
       - qdrant_data:/qdrant/storage
     networks: [default]
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     restart: unless-stopped
 
   ollama:
@@ -84,12 +105,23 @@ services:
     environment:
       OLLAMA_HOST: 0.0.0.0
       OLLAMA_KEEP_ALIVE: 24h
+    healthcheck:
+      # ollama API 의 /api/tags 가 200 이면 ready
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
     volumes:
       - ollama_data:/root/.ollama
     networks: [default]
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 6G    # 7B 모델 적재 여유. 3B 는 2~3GB 면 충분
     restart: unless-stopped
-    # GPU passthrough: VirtualBox 환경이면 사용 불가. 베어메탈 NVIDIA 호스트라면
-    # 아래 deploy 블록 주석 해제 + nvidia-container-toolkit 설치 필요.
+    # GPU 사용 시 (베어메탈 + nvidia-container-toolkit):
     # deploy:
     #   resources:
     #     reservations:
@@ -99,37 +131,50 @@ services:
     #           capabilities: [gpu]
 
   ollama-pull:
-    # 1회성 init: ollama 가 가동되면 모델을 받고 종료한다.
-    # docker compose up 후 'docker compose logs ollama-pull' 으로 진행률 확인 가능.
+    # 1회성 init: ollama 가 ready 가 되면 모델을 받고 종료한다.
     image: ollama/ollama:0.3.10
     container_name: aiops-ollama-pull
     entrypoint: /bin/sh
     command: >
       -c "
-        echo '[ollama-pull] waiting for ollama server to be ready...';
+        echo '[ollama-pull] waiting for ollama server...';
         until ollama list >/dev/null 2>&1; do sleep 2; done;
-        echo '[ollama-pull] pulling ${OLLAMA_MODEL:-qwen2.5:3b}';
-        ollama pull ${OLLAMA_MODEL:-qwen2.5:3b};
+        if ollama list 2>/dev/null | awk '{print $$1}' | grep -qx '${OLLAMA_MODEL:-qwen2.5:3b}'; then
+          echo '[ollama-pull] model ${OLLAMA_MODEL:-qwen2.5:3b} already present; skip';
+        else
+          echo '[ollama-pull] pulling ${OLLAMA_MODEL:-qwen2.5:3b}';
+          ollama pull ${OLLAMA_MODEL:-qwen2.5:3b};
+        fi;
         echo '[ollama-pull] done';
       "
     environment:
       OLLAMA_HOST: ollama:11434
     depends_on:
       ollama:
-        condition: service_started
+        condition: service_healthy
     networks: [default]
+    logging: *default-logging
     restart: "no"
 
   rl-stub:
-    # Phase 4a: FastAPI 휴리스틱 스텁. Phase 4b 의 SAC 체크포인트가 있으면
-    # ../04-rl/serve.py 를 대신 호출하도록 .env 의 RL_DECIDE_URL 만 바꾸면 됨.
     build:
       context: ../04a-rl-stub
       dockerfile: Dockerfile
     container_name: aiops-rl-stub
     environment:
       LOG_LEVEL: info
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://localhost:8000/health\", timeout=2).status==200 else 1)'"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     networks: [default]
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     restart: unless-stopped
 
   n8n:
@@ -143,9 +188,19 @@ services:
       N8N_PORT: 5678
       N8N_PROTOCOL: http
       WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678/}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
     depends_on:
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   n8n-worker:
     <<: *n8n-common
@@ -155,7 +210,11 @@ services:
       redis:
         condition: service_healthy
       n8n:
-        condition: service_started
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
 volumes:
   redis_data:

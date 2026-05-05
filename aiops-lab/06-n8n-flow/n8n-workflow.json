@@ -5,7 +5,8 @@
     "executionOrder": "v1",
     "timezone": "Asia/Seoul",
     "saveExecutionProgress": true,
-    "saveManualExecutions": true
+    "saveManualExecutions": true,
+    "executionTimeout": 300
   },
   "nodes": [
     {
@@ -30,7 +31,7 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "// Alertmanager payload 의 첫 번째 알람만 처리 (groupBy=namespace,pod,container)\nconst body = $input.first().json.body || $input.first().json;\nconst alert = (body.alerts && body.alerts[0]) || {};\nconst labels = alert.labels || {};\nconst annotations = alert.annotations || {};\n\nreturn [{\n  json: {\n    alertname:   labels.alertname || 'Unknown',\n    namespace:   labels.namespace || labels.exported_namespace || 'default',\n    pod:         labels.pod || '',\n    container:   labels.container || 'api',\n    severity:    labels.severity || 'unknown',\n    summary:     annotations.summary || '',\n    description: annotations.description || '',\n    raw:         body\n  }\n}];"
+        "jsCode": "// Alertmanager payload 파싱.\n// - 첫 번째 'firing' 알람만 처리 (resolved 는 무시)\n// - 잘못된 payload 면 명시적 에러 throw → n8n 의 'Stop on error' 동작\n// - dedup_key 생성 → 후속 노드에서 idempotency 보장\ntry {\n  const body = $input.first().json.body || $input.first().json;\n  const alerts = (body && body.alerts) || [];\n  const firing = alerts.find(a => (a.status || 'firing') === 'firing');\n  if (!firing) {\n    // resolved 만 들어온 경우 정상적으로 종료 (빈 결과)\n    return [];\n  }\n  const labels = firing.labels || {};\n  const annotations = firing.annotations || {};\n  if (!labels.namespace || !labels.pod) {\n    throw new Error('alert missing required labels namespace/pod: ' + JSON.stringify(labels));\n  }\n  return [{\n    json: {\n      alertname:   labels.alertname || 'Unknown',\n      namespace:   labels.namespace,\n      pod:         labels.pod,\n      container:   labels.container || 'api',\n      severity:    labels.severity || 'unknown',\n      summary:     annotations.summary || '',\n      description: annotations.description || '',\n      // dedup: 같은 알람이 5분 내 다시 와도 동일 key. 후속 워크플로우에서 K8s\n      // deployment annotation 확인하여 이미 patch 됐으면 skip 하는 식으로 사용 가능.\n      dedup_key:   `${labels.namespace}/${labels.pod}/${labels.container || 'api'}`,\n      received_at: new Date().toISOString(),\n      _raw:        body,\n    }\n  }];\n} catch (e) {\n  throw new Error('Parse Alert failed: ' + e.message);\n}\n"
       },
       "id": "node-2-parse-alert",
       "name": "Parse Alert",
@@ -62,7 +63,8 @@
             "response": {
               "responseFormat": "json"
             }
-          }
+          },
+          "timeout": 15000
         }
       },
       "id": "node-3a-get-pod",
@@ -96,7 +98,8 @@
             "response": {
               "responseFormat": "text"
             }
-          }
+          },
+          "timeout": 15000
         }
       },
       "id": "node-3b-get-logs",
@@ -129,7 +132,8 @@
             "response": {
               "responseFormat": "json"
             }
-          }
+          },
+          "timeout": 15000
         }
       },
       "id": "node-3c-get-events",
@@ -144,7 +148,7 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "// 3 HTTP 결과 + parsed alert 를 합쳐서 LLM 입력 prompt 생성.\n// n8n 의 mergeBy/expression 만으로 묶기 까다로워서 모든 input 을 Code 에서 합침.\nconst alertItem = $('Parse Alert').first().json;\nconst pod    = $('K8s GET pod').first().json || {};\nconst logsItem = $('K8s GET pod logs (previous)').first();\nconst logsJson = (logsItem && logsItem.json) || {};\nconst logs = (typeof logsJson === 'string') ? logsJson\n  : (logsJson.data ?? logsJson.body ?? logsJson.text ?? (logsItem && logsItem.binary ? '' : ''));\nconst events = $('K8s GET events').first().json || {};\n\n// describe-style 요약 (전체 dump 는 너무 길어서 핵심만)\nconst container = (pod.spec && pod.spec.containers && pod.spec.containers[0]) || {};\nconst lastState = ((pod.status && pod.status.containerStatuses && pod.status.containerStatuses[0]) || {}).lastState || {};\nconst describe = [\n  `Name:      ${pod.metadata && pod.metadata.name}`,\n  `Namespace: ${pod.metadata && pod.metadata.namespace}`,\n  `Status:    ${pod.status && pod.status.phase}`,\n  `Container: ${container.name} (${container.image})`,\n  `Limits:    ${JSON.stringify(container.resources && container.resources.limits)}`,\n  `Requests:  ${JSON.stringify(container.resources && container.resources.requests)}`,\n  `LastState: ${JSON.stringify(lastState)}`,\n].join('\\n');\n\nconst logsText = logs ? String(logs).split('\\n').slice(-80).join('\\n') : '(no previous logs available)';\n\nconst eventLines = (events.items || []).slice(-15).map(e =>\n  `${e.lastTimestamp || e.eventTime || ''}  ${e.type}  ${e.reason}  ${e.message}`\n).join('\\n');\n\nconst userPrompt = `[ALERT]\\n${JSON.stringify({\n  alertname: alertItem.alertname,\n  severity:  alertItem.severity,\n  summary:   alertItem.summary,\n})}\\n\\n[POD]\\nnamespace: ${alertItem.namespace}\\nname:      ${alertItem.pod}\\ncontainer: ${alertItem.container}\\n\\n[POD describe (truncated)]\\n${describe}\\n\\n[Container logs — previous instance, last 80 lines]\\n${logsText}\\n\\n[Recent events]\\n${eventLines}`;\n\nconst systemPrompt = `You are a senior Kubernetes SRE and JVM/Python operations expert.\\nReturn JSON only, schema: {\"root_cause\":str,\"confidence\":int,\"evidence\":[str]}`;\n\nreturn [{\n  json: {\n    alert: alertItem,\n    pod_summary: describe,\n    logs_text: logsText,\n    events_text: eventLines,\n    system_prompt: systemPrompt,\n    user_prompt: userPrompt,\n    // RL stub 입력에 사용할 메트릭 추정치\n    current_limit_mb: parseInt((container.resources && container.resources.limits && container.resources.limits.memory || '128Mi').replace(/[^0-9]/g, '')) || 128,\n    restart_count: ((pod.status && pod.status.containerStatuses && pod.status.containerStatuses[0]) || {}).restartCount || 0,\n  }\n}];"
+        "jsCode": "// 3 HTTP 결과 + parsed alert 를 합쳐서 LLM 입력 prompt 생성.\nconst alertItem = $('Parse Alert').first().json;\nconst podItem   = $('K8s GET pod').first();\nconst eventItem = $('K8s GET events').first();\nconst logsItem  = $('K8s GET pod logs (previous)').first();\n\nconst pod      = (podItem && podItem.json) || {};\nconst events   = (eventItem && eventItem.json) || {};\nconst logsJson = (logsItem && logsItem.json) || {};\n\n// --- describe-style 요약 (전체 dump 는 너무 길어서 핵심만) ---\nconst containers     = (pod.spec && pod.spec.containers) || [];\nconst targetName     = alertItem.container;\nconst container      = containers.find(c => c.name === targetName) || containers[0] || {};\nconst containerStat  = ((pod.status && pod.status.containerStatuses) || [])\n                          .find(s => s.name === targetName)\n                       || ((pod.status && pod.status.containerStatuses) || [])[0]\n                       || {};\nconst lastState      = containerStat.lastState || {};\nconst limits         = (container.resources && container.resources.limits) || {};\nconst requests       = (container.resources && container.resources.requests) || {};\n\nconst describe = [\n  `Name:      ${(pod.metadata && pod.metadata.name) || alertItem.pod}`,\n  `Namespace: ${(pod.metadata && pod.metadata.namespace) || alertItem.namespace}`,\n  `Status:    ${(pod.status && pod.status.phase) || 'Unknown'}`,\n  `Container: ${container.name || targetName} (${container.image || 'unknown-image'})`,\n  `Limits:    ${JSON.stringify(limits)}`,\n  `Requests:  ${JSON.stringify(requests)}`,\n  `LastState: ${JSON.stringify(lastState)}`,\n  `Restarts:  ${containerStat.restartCount || 0}`,\n].join('\\n');\n\n// --- logs (n8n response shape 다양: .data / .body / .text / 직접 string) ---\nconst logsRaw = (typeof logsJson === 'string')\n  ? logsJson\n  : (logsJson.data ?? logsJson.body ?? logsJson.text ?? '');\nconst logsText = logsRaw\n  ? String(logsRaw).split('\\n').slice(-80).join('\\n')\n  : '(no previous logs available)';\n\n// --- events ---\nconst eventLines = (events.items || [])\n  .slice(-15)\n  .map(e => `${e.lastTimestamp || e.eventTime || ''}  ${e.type || ''}  ${e.reason || ''}  ${e.message || ''}`)\n  .join('\\n') || '(no events)';\n\n// --- prompts ---\nconst userPrompt = `[ALERT]\n${JSON.stringify({\n  alertname: alertItem.alertname,\n  severity:  alertItem.severity,\n  summary:   alertItem.summary,\n  dedup_key: alertItem.dedup_key,\n})}\n\n[POD]\nnamespace: ${alertItem.namespace}\nname:      ${alertItem.pod}\ncontainer: ${alertItem.container}\n\n[POD describe (truncated)]\n${describe}\n\n[Container logs — previous instance, last 80 lines]\n${logsText}\n\n[Recent events (last 15)]\n${eventLines}`;\n\nconst systemPrompt = `You are a senior Kubernetes SRE and JVM/Python operations expert.\nAnalyze the Pod failure context and return JSON only matching this schema:\n  {\"root_cause\": str, \"confidence\": int (0-100), \"evidence\": [str]}\n- Output ONLY the JSON object. No markdown fences, no preamble.\n- Cite concrete signals from the input in 'evidence'.\n- Set confidence < 50 if input is insufficient.`;\n\n// --- limit 파싱: '128Mi', '1Gi', '1024Ki', '1G', '1024' (no suffix) 모두 지원 ---\nfunction parseMemoryToMi(s) {\n  if (!s) return 128;\n  const m = String(s).match(/^([0-9]+)\\s*(Ki|Mi|Gi|Ti|Pi|K|M|G|T)?$/);\n  if (!m) return 128;\n  const n = parseInt(m[1], 10);\n  switch (m[2] || 'Mi') {\n    case 'Ki': return Math.max(1, Math.round(n / 1024));\n    case 'Mi': return n;\n    case 'Gi': return n * 1024;\n    case 'Ti': return n * 1024 * 1024;\n    case 'Pi': return n * 1024 * 1024 * 1024;\n    case 'K':  return Math.max(1, Math.round(n * 1000 / (1024 * 1024) * 1024));\n    case 'M':  return Math.round(n * 1000 / 1024);\n    case 'G':  return Math.round(n * 1000 * 1000 / 1024);\n    default:   return n;\n  }\n}\n\nreturn [{\n  json: {\n    alert:            alertItem,\n    pod_summary:      describe,\n    logs_text:        logsText,\n    events_text:      eventLines,\n    system_prompt:    systemPrompt,\n    user_prompt:      userPrompt,\n    current_limit_mb: parseMemoryToMi(limits.memory),\n    restart_count:    containerStat.restartCount || 0,\n  }\n}];\n"
       },
       "id": "node-4-build-prompt",
       "name": "Build LLM Prompt",
@@ -163,7 +167,7 @@
         "specifyBody": "json",
         "jsonBody": "={\n  \"model\": \"{{$env.OLLAMA_MODEL}}\",\n  \"stream\": false,\n  \"format\": \"json\",\n  \"messages\": [\n    {\"role\": \"system\", \"content\": {{ JSON.stringify($json.system_prompt) }}},\n    {\"role\": \"user\",   \"content\": {{ JSON.stringify($json.user_prompt) }}}\n  ]\n}",
         "options": {
-          "timeout": 60000,
+          "timeout": 90000,
           "response": {
             "response": {
               "responseFormat": "json"
@@ -183,7 +187,7 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "// Ollama 응답에서 message.content (JSON 문자열) 파싱\nconst raw = ($input.first().json.message && $input.first().json.message.content) || '{}';\nlet parsed = { root_cause: 'unknown', confidence: 0, evidence: [] };\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  // LLM 이 코드 블록 포함하는 경우 fence 제거 후 재시도\n  const stripped = raw.replace(/^```json\\s*/, '').replace(/```$/, '').trim();\n  try { parsed = JSON.parse(stripped); } catch (_) {}\n}\nconst prev = $('Build LLM Prompt').first().json;\nreturn [{ json: { ...prev, diagnosis: parsed } }];"
+        "jsCode": "// Ollama 응답에서 message.content 파싱.\n// LLM 이 JSON 외 텍스트를 섞어 보내는 경우도 자주 있어 ```fence 제거 + bracket scan 으로 fallback.\nconst resp = $input.first().json || {};\nconst raw  = (resp.message && resp.message.content) || resp.response || '{}';\n\nfunction tryParse(s) {\n  try { return JSON.parse(s); } catch (_) { return null; }\n}\n\nlet parsed = tryParse(raw);\nif (!parsed) {\n  // ```json ... ``` fence 제거\n  const stripped = String(raw).replace(/^```(?:json)?\\s*/i, '').replace(/```\\s*$/, '').trim();\n  parsed = tryParse(stripped);\n}\nif (!parsed) {\n  // 첫 번째 { 와 마지막 } 사이만 추출\n  const s = String(raw);\n  const a = s.indexOf('{');\n  const b = s.lastIndexOf('}');\n  if (a >= 0 && b > a) parsed = tryParse(s.slice(a, b + 1));\n}\nif (!parsed || typeof parsed !== 'object') {\n  parsed = {\n    root_cause: 'LLM response unparseable',\n    confidence: 0,\n    evidence:   [String(raw).slice(0, 200)],\n    _llm_error: true,\n  };\n}\n// confidence 정규화 (0..100 정수 유지)\nparsed.confidence = Math.max(0, Math.min(100, parseInt(parsed.confidence ?? 0, 10) || 0));\nparsed.evidence   = Array.isArray(parsed.evidence) ? parsed.evidence : [String(parsed.evidence || '')];\n\nconst prev = $('Build LLM Prompt').first().json;\nreturn [{ json: { ...prev, diagnosis: parsed } }];\n"
       },
       "id": "node-6-parse-llm",
       "name": "Parse LLM JSON",
@@ -222,7 +226,7 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const prev = $('Parse LLM JSON').first().json;\nconst rl = $input.first().json;\nreturn [{ json: { ...prev, remediation: rl } }];"
+        "jsCode": "const prev = $('Parse LLM JSON').first().json || {};\nconst rl   = $input.first().json || {};\n// RL stub 응답이 비정상이면 안전 기본값 사용\nconst remediation = {\n  recommended_limit_mb:      Number(rl.recommended_limit_mb) || (prev.current_limit_mb * 2),\n  recommended_hpa_threshold: Number(rl.recommended_hpa_threshold) || 70,\n  recommended_hpa_max:       Number(rl.recommended_hpa_max) || 5,\n  confidence:                Number(rl.confidence) || 0.5,\n  reason:                    String(rl.reason || 'rl-stub fallback'),\n  policy:                    String(rl.policy || 'unknown'),\n};\nreturn [{ json: { ...prev, remediation } }];\n"
       },
       "id": "node-8-merge-rl",
       "name": "Merge RL",
@@ -297,7 +301,7 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "// Slack 은 application/x-www-form-urlencoded 로 'payload=<JSON>' 형태로 보낸다.\nconst body = $input.first().json.body || $input.first().json;\nlet payload;\nif (typeof body === 'string') {\n  // rawBody → 'payload=...' 디코드\n  const m = body.match(/payload=(.+)/);\n  payload = m ? JSON.parse(decodeURIComponent(m[1].replace(/\\+/g, ' '))) : {};\n} else if (body.payload) {\n  payload = typeof body.payload === 'string' ? JSON.parse(body.payload) : body.payload;\n} else {\n  payload = body;\n}\nconst action = (payload.actions && payload.actions[0]) || {};\nlet decision = {};\ntry { decision = JSON.parse(action.value || '{}'); } catch (_) {}\nreturn [{\n  json: {\n    action_id:   action.action_id || 'unknown',\n    user:        (payload.user && payload.user.name) || 'unknown',\n    decision:    decision,\n    response_url: payload.response_url\n  }\n}];"
+        "jsCode": "// Slack interactivity 콜백 파싱.\n// Slack 은 application/x-www-form-urlencoded ('payload=<JSON>') 또는 raw body 로 보냄.\ntry {\n  const body = $input.first().json.body ?? $input.first().json;\n  let payload;\n\n  if (typeof body === 'string') {\n    const m = body.match(/payload=([^&]+)/);\n    if (!m) throw new Error('rawBody missing payload= prefix');\n    payload = JSON.parse(decodeURIComponent(m[1].replace(/\\+/g, ' ')));\n  } else if (body && body.payload) {\n    payload = typeof body.payload === 'string' ? JSON.parse(body.payload) : body.payload;\n  } else if (body && body.actions) {\n    payload = body;\n  } else {\n    throw new Error('unexpected slack payload shape: ' + Object.keys(body || {}).join(','));\n  }\n\n  const action = (payload.actions && payload.actions[0]) || {};\n  let decision = {};\n  if (action.value) {\n    try { decision = JSON.parse(action.value); }\n    catch (_) { decision = { raw: action.value }; }\n  }\n\n  return [{\n    json: {\n      action_id:    action.action_id || 'unknown',\n      user:         (payload.user && (payload.user.name || payload.user.username)) || 'unknown',\n      decision:     decision,\n      response_url: payload.response_url || null,\n      _slack_ts:    payload.message && payload.message.ts,\n    }\n  }];\n} catch (e) {\n  throw new Error('Parse Slack Action failed: ' + e.message);\n}\n"
       },
       "id": "node-11-parse-slack",
       "name": "Parse Slack Action",
@@ -365,7 +369,8 @@
             "response": {
               "responseFormat": "json"
             }
-          }
+          },
+          "timeout": 15000
         }
       },
       "id": "node-13-patch",
