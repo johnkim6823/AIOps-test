@@ -40,6 +40,14 @@ kubectl -n ingress-nginx wait --for=condition=complete \
 kubectl -n ingress-nginx wait --for=condition=complete \
   job/ingress-nginx-admission-patch --timeout=120s 2>/dev/null || true
 
+# ----- 2.5) kube-system core controllers ready -----
+log "waiting for kube-system core components"
+# CoreDNS / kube-proxy / etc 가 Ready 상태여야 다음 Phase 의 helm install 안정.
+kubectl -n kube-system wait --for=condition=Ready pods \
+  --selector=k8s-app=kube-dns --timeout=120s 2>/dev/null || true
+# 'kindnet' (kind 의 CNI) 도 Ready 인지 확인
+kubectl -n kube-system rollout status ds/kindnet --timeout=120s 2>/dev/null || true
+
 # ----- 3) verification -----
 log "verifying nodes are Ready"
 kubectl get nodes -o wide

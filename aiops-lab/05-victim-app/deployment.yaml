@@ -28,10 +28,24 @@ spec:
         # promtail 이 자동으로 모든 pod 로그를 수집하지만, 명시적으로 라벨
         prometheus.io/scrape: "false"
     spec:
+      # Pod-level SecurityContext: non-root, no privilege escalation
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: api
           image: payment-api:demo
           imagePullPolicy: IfNotPresent
+          # Container-level SecurityContext: read-only fs, drop all caps
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: 8080

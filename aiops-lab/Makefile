@@ -13,7 +13,15 @@
 
 LAB := $(CURDIR)
 
-.PHONY: preflight k8s observ stack victim flow test up down clean rl-train rl-eval rl-serve
+# 모든 타겟이 lab.env 를 sourcing 하여 동일한 cluster / namespace / image 사용.
+# Bash 단계에서 . 로 source. PHONY 가 아니라 prerequisite 로 두면 재호출 시에도 적용.
+SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
+
+# 공통 sourcing 헤더 — 각 recipe 첫 줄에서 사용
+SOURCE_LAB_ENV := source $(LAB)/lab.env;
+
+.PHONY: preflight k8s observ stack victim flow test smoke up down clean rl-train rl-eval rl-serve config
 
 preflight:
 	$(LAB)/00-preflight/check.sh
@@ -35,6 +43,12 @@ flow:
 
 test:
 	$(LAB)/07-tests/e2e-test.sh
+
+smoke:
+	$(LAB)/07-tests/integration-smoke.sh
+
+config:
+	@$(SOURCE_LAB_ENV) env | grep '^LAB_' | sort
 
 up: k8s observ stack victim flow
 	@echo

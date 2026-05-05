@@ -61,10 +61,16 @@
           "allowUnauthorizedCerts": true,
           "response": {
             "response": {
-              "responseFormat": "json"
+              "responseFormat": "json",
+              "neverError": false
             }
           },
-          "timeout": 15000
+          "timeout": 15000,
+          "retry": {
+            "retry": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1500
+          }
         }
       },
       "id": "node-3a-get-pod",
@@ -96,10 +102,16 @@
           "allowUnauthorizedCerts": true,
           "response": {
             "response": {
-              "responseFormat": "text"
+              "responseFormat": "text",
+              "neverError": false
             }
           },
-          "timeout": 15000
+          "timeout": 15000,
+          "retry": {
+            "retry": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1500
+          }
         }
       },
       "id": "node-3b-get-logs",
@@ -130,10 +142,16 @@
           "allowUnauthorizedCerts": true,
           "response": {
             "response": {
-              "responseFormat": "json"
+              "responseFormat": "json",
+              "neverError": false
             }
           },
-          "timeout": 15000
+          "timeout": 15000,
+          "retry": {
+            "retry": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1500
+          }
         }
       },
       "id": "node-3c-get-events",
@@ -170,8 +188,14 @@
           "timeout": 90000,
           "response": {
             "response": {
-              "responseFormat": "json"
+              "responseFormat": "json",
+              "neverError": false
             }
+          },
+          "retry": {
+            "retry": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1500
           }
         }
       },
@@ -209,8 +233,14 @@
           "timeout": 10000,
           "response": {
             "response": {
-              "responseFormat": "json"
+              "responseFormat": "json",
+              "neverError": false
             }
+          },
+          "retry": {
+            "retry": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1500
           }
         }
       },
@@ -258,13 +288,19 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"channel\": \"{{$env.SLACK_CHANNEL}}\",\n  \"text\": \"AIOps 자동 진단 결과 — {{ $json.alert.namespace }}/{{ $json.alert.pod }}\",\n  \"blocks\": [\n    {\"type\":\"header\",\"text\":{\"type\":\"plain_text\",\"text\":\"AIOps Automated Diagnosis\"}},\n    {\"type\":\"section\",\"fields\":[\n      {\"type\":\"mrkdwn\",\"text\":\"*Pod*\\n{{ $json.alert.namespace }}/{{ $json.alert.pod }}\"},\n      {\"type\":\"mrkdwn\",\"text\":\"*Container*\\n{{ $json.alert.container }}\"},\n      {\"type\":\"mrkdwn\",\"text\":\"*Confidence*\\n{{ $json.diagnosis.confidence }}%\"},\n      {\"type\":\"mrkdwn\",\"text\":\"*New Limit*\\n{{ $json.remediation.recommended_limit_mb }} Mi\"}\n    ]},\n    {\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Root Cause*\\n{{ $json.diagnosis.root_cause }}\"}},\n    {\"type\":\"actions\",\"block_id\":\"aiops_actions\",\"elements\":[\n      {\"type\":\"button\",\"action_id\":\"approve_patch\",\"style\":\"primary\",\"text\":{\"type\":\"plain_text\",\"text\":\"Approve\"},\"value\":{{ JSON.stringify(JSON.stringify({namespace: $json.alert.namespace, deployment: 'payment-api', container: $json.alert.container, new_limit_mb: $json.remediation.recommended_limit_mb})) }}},\n      {\"type\":\"button\",\"action_id\":\"reject_patch\",\"style\":\"danger\",\"text\":{\"type\":\"plain_text\",\"text\":\"Reject\"},\"value\":\"reject\"}\n    ]}\n  ]\n}",
+        "jsonBody": "={\n  \"channel\": \"{{$env.SLACK_CHANNEL}}\",\n  \"text\": \"AIOps 자동 진단 결과 — {{ $json.alert.namespace }}/{{ $json.alert.pod }}\",\n  \"blocks\": [\n    {\"type\":\"header\",\"text\":{\"type\":\"plain_text\",\"text\":\"AIOps Automated Diagnosis\"}},\n    {\"type\":\"section\",\"fields\":[\n      {\"type\":\"mrkdwn\",\"text\":\"*Pod*\\n{{ $json.alert.namespace }}/{{ $json.alert.pod }}\"},\n      {\"type\":\"mrkdwn\",\"text\":\"*Container*\\n{{ $json.alert.container }}\"},\n      {\"type\":\"mrkdwn\",\"text\":\"*Confidence*\\n{{ $json.diagnosis.confidence }}%\"},\n      {\"type\":\"mrkdwn\",\"text\":\"*New Limit*\\n{{ $json.remediation.recommended_limit_mb }} Mi\"}\n    ]},\n    {\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Root Cause*\\n{{ $json.diagnosis.root_cause }}\"}},\n    {\"type\":\"actions\",\"block_id\":\"aiops_actions\",\"elements\":[\n      {\"type\":\"button\",\"action_id\":\"approve_patch\",\"style\":\"primary\",\"text\":{\"type\":\"plain_text\",\"text\":\"Approve\"},\"value\":{{ JSON.stringify(JSON.stringify({namespace: $json.alert.namespace, deployment: 'payment-api', container: $json.alert.container, new_limit_mb: $json.remediation.recommended_limit_mb, old_limit_mb: $json.current_limit_mb})) }}},\n      {\"type\":\"button\",\"action_id\":\"reject_patch\",\"style\":\"danger\",\"text\":{\"type\":\"plain_text\",\"text\":\"Reject\"},\"value\":\"reject\"}\n    ]}\n  ]\n}",
         "options": {
           "timeout": 10000,
           "response": {
             "response": {
-              "responseFormat": "json"
+              "responseFormat": "json",
+              "neverError": false
             }
+          },
+          "retry": {
+            "retry": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1500
           }
         }
       },
@@ -281,7 +317,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "slack-approve",
-        "responseMode": "lastNode",
+        "responseMode": "onReceived",
         "responseData": "allEntries",
         "options": {
           "rawBody": true
@@ -362,15 +398,21 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"spec\": {\n    \"template\": {\n      \"spec\": {\n        \"containers\": [\n          {\n            \"name\": \"{{ $json.decision.container }}\",\n            \"resources\": { \"limits\": { \"memory\": \"{{ $json.decision.new_limit_mb }}Mi\" } }\n          }\n        ]\n      }\n    }\n  }\n}",
+        "jsonBody": "={\n  \"spec\": {\n    \"template\": {\n      \"metadata\": {\n        \"annotations\": {\n          \"aiops/last-remediation\": \"{{ $now }}\",\n          \"aiops/remediation-source\": \"n8n-workflow\",\n          \"aiops/old-limit\": \"{{ $('Parse Slack Action').first().json.decision.old_limit_mb || '?' }}Mi\",\n          \"aiops/new-limit\": \"{{ $json.decision.new_limit_mb }}Mi\"\n        }\n      },\n      \"spec\": {\n        \"containers\": [\n          {\n            \"name\": \"{{ $json.decision.container }}\",\n            \"resources\": { \"limits\": { \"memory\": \"{{ $json.decision.new_limit_mb }}Mi\" } }\n          }\n        ]\n      }\n    }\n  }\n}",
         "options": {
           "allowUnauthorizedCerts": true,
           "response": {
             "response": {
-              "responseFormat": "json"
+              "responseFormat": "json",
+              "neverError": false
             }
           },
-          "timeout": 15000
+          "timeout": 15000,
+          "retry": {
+            "retry": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1500
+          }
         }
       },
       "id": "node-13-patch",
@@ -390,7 +432,17 @@
         "specifyBody": "json",
         "jsonBody": "={\n  \"text\": \"✅ Patch applied: {{ $('Parse Slack Action').first().json.decision.namespace }}/{{ $('Parse Slack Action').first().json.decision.deployment }} memory_limit -> {{ $('Parse Slack Action').first().json.decision.new_limit_mb }}Mi (by {{ $('Parse Slack Action').first().json.user }})\"\n}",
         "options": {
-          "timeout": 10000
+          "timeout": 10000,
+          "retry": {
+            "retry": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1500
+          },
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
         }
       },
       "id": "node-14-slack-confirm",
@@ -410,7 +462,17 @@
         "specifyBody": "json",
         "jsonBody": "={\n  \"text\": \"❌ Remediation rejected by {{ $json.user }}. Manual review needed.\"\n}",
         "options": {
-          "timeout": 10000
+          "timeout": 10000,
+          "retry": {
+            "retry": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1500
+          },
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
         }
       },
       "id": "node-15-slack-reject",
@@ -420,6 +482,127 @@
       "position": [
         -480,
         600
+      ]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Slack interactivity 콜백 서명 검증.\n// (https://api.slack.com/authentication/verifying-requests-from-slack)\n// SLACK_SIGNING_SECRET 가 없으면 skip (lab).\nconst crypto = require('crypto');\nconst secret = $env.SLACK_SIGNING_SECRET || '';\nconst headers = $input.first().json.headers || {};\nconst ts      = headers['x-slack-request-timestamp'] || headers['X-Slack-Request-Timestamp'];\nconst sig     = headers['x-slack-signature']         || headers['X-Slack-Signature'];\nconst rawBody = $input.first().json.body;\n\nif (!secret) {\n  return [{ json: { ...$input.first().json, _slack_verified: false, _verify_skipped: true } }];\n}\nif (!ts || !sig) {\n  throw new Error('Slack signature headers missing — reject');\n}\n// 5분 이상 오래된 요청은 replay 공격 가능 → 거부\nconst now = Math.floor(Date.now() / 1000);\nif (Math.abs(now - parseInt(ts, 10)) > 300) {\n  throw new Error('Slack request too old (replay protection)');\n}\nconst body = (typeof rawBody === 'string') ? rawBody : JSON.stringify(rawBody || '');\nconst baseString = `v0:${ts}:${body}`;\nconst expected = 'v0=' + crypto.createHmac('sha256', secret).update(baseString).digest('hex');\n// 길이 다르면 timingSafeEqual 가 throw → length pad\nif (sig.length !== expected.length) {\n  throw new Error('Slack signature length mismatch');\n}\nconst ok = crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));\nif (!ok) {\n  throw new Error('Slack signature mismatch');\n}\nreturn [{ json: { ...$input.first().json, _slack_verified: true } }];\n"
+      },
+      "id": "node-10b-verify-slack-sig",
+      "name": "Verify Slack Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1080,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.K8S_API_URL}}/apis/apps/v1/namespaces/{{$json.decision.namespace}}/deployments/{{$json.decision.deployment}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.K8S_TOKEN}}"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000,
+          "retry": {
+            "retry": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1500
+          }
+        }
+      },
+      "id": "node-12b-get-deploy-cooldown",
+      "name": "K8s GET deploy (cooldown check)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// 직전 remediation 으로부터 5분 이내면 skip (replay prevention).\nconst dep = $input.first().json || {};\nconst ann = (dep.metadata && dep.metadata.annotations) || {};\nconst last = ann['aiops/last-remediation'];\nconst cooldownSec = 300;\nlet inCooldown = false;\nif (last) {\n  const last_ts = Date.parse(last);\n  if (!Number.isNaN(last_ts)) {\n    inCooldown = (Date.now() - last_ts) < cooldownSec * 1000;\n  }\n}\nconst prev = $('Parse Slack Action').first().json;\nreturn [{\n  json: {\n    ...prev,\n    in_cooldown: inCooldown,\n    last_remediation: last || null,\n  }\n}];\n"
+      },
+      "id": "node-12c-cooldown-check",
+      "name": "Cooldown Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.in_cooldown }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-12d-if-cooldown",
+      "name": "IF not in cooldown",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SLACK_WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"⏸ Skipped: {{ $json.decision.namespace }}/{{ $json.decision.deployment }} was just patched at {{ $json.last_remediation }}. Cooldown 5 min.\"\n}",
+        "options": {
+          "timeout": 10000,
+          "retry": {
+            "retry": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1500
+          }
+        }
+      },
+      "id": "node-12e-slack-cooldown",
+      "name": "Slack Cooldown Skip",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        480
       ]
     }
   ],
@@ -548,7 +731,7 @@
       "main": [
         [
           {
-            "node": "Parse Slack Action",
+            "node": "Verify Slack Signature",
             "type": "main",
             "index": 0
           }
@@ -570,7 +753,7 @@
       "main": [
         [
           {
-            "node": "K8s PATCH deployment",
+            "node": "K8s GET deploy (cooldown check)",
             "type": "main",
             "index": 0
           }
@@ -589,6 +772,57 @@
         [
           {
             "node": "Slack Confirm Applied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Slack Signature": {
+      "main": [
+        [
+          {
+            "node": "Parse Slack Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K8s GET deploy (cooldown check)": {
+      "main": [
+        [
+          {
+            "node": "Cooldown Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cooldown Check": {
+      "main": [
+        [
+          {
+            "node": "IF not in cooldown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF not in cooldown": {
+      "main": [
+        [
+          {
+            "node": "K8s PATCH deployment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack Cooldown Skip",
             "type": "main",
             "index": 0
           }

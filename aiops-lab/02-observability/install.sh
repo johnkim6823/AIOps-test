@@ -67,9 +67,11 @@ helm upgrade --install "${LOKI_RELEASE}" grafana/loki-stack \
   --values "${SCRIPT_DIR}/values-loki.yaml" \
   --wait --timeout 10m
 
-# ------------------ PrometheusRule (OOM 알람) ------------------
+# ------------------ PrometheusRule (OOM 알람 + AIOps 스택 health) ------------------
 log "applying PrometheusRule for PodOOMKilled"
 kubectl apply -f "${SCRIPT_DIR}/oom-prometheus-rule.yaml"
+log "applying PrometheusRule for AIOps stack self-monitoring"
+kubectl apply -f "${SCRIPT_DIR}/aiops-stack-rule.yaml"
 
 # ------------------ AlertmanagerConfig (n8n webhook) ------------------
 log "rendering AlertmanagerConfig with N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}"

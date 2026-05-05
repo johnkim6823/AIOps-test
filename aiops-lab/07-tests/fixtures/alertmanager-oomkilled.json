@@ -1,0 +1,41 @@
+{
+  "version": "4",
+  "groupKey": "{}:{alertname=\"PodOOMKilled\"}",
+  "status": "firing",
+  "receiver": "n8n-oom",
+  "groupLabels": {
+    "alertname": "PodOOMKilled",
+    "namespace": "prod",
+    "pod": "payment-api-7d4f8b9c6-xk2mp"
+  },
+  "commonLabels": {
+    "alertname": "PodOOMKilled",
+    "severity": "critical",
+    "team": "aiops"
+  },
+  "commonAnnotations": {},
+  "externalURL": "http://alertmanager.prod.local",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "PodOOMKilled",
+        "namespace": "prod",
+        "pod": "payment-api-7d4f8b9c6-xk2mp",
+        "container": "api",
+        "severity": "critical",
+        "team": "aiops",
+        "alert_kind": "oomkilled"
+      },
+      "annotations": {
+        "summary": "Pod OOMKilled — prod/payment-api-7d4f8b9c6-xk2mp (api)",
+        "description": "Container api in pod prod/payment-api-7d4f8b9c6-xk2mp terminated with reason=OOMKilled (exit 137).",
+        "runbook_url": "https://github.com/johnkim6823/AIOps-test#oomkilled"
+      },
+      "startsAt": "2026-04-23T10:15:42Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://prometheus.prod.local/graph?g0.expr=...",
+      "fingerprint": "abc123def456"
+    }
+  ]
+}
